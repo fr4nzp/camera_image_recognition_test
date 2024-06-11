@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Analysis</title>
+</head>
+<body>
+    <video id="video" width="640" height="480" autoplay></video>
+    <button id="analyzeButton">Analyze Frame</button>
+
+    <div>
+        <label for="descriptionLength">Description Length:</label>
+        <select id="descriptionLength">
+            <option value="long">Long</option>
+            <option value="medium">Medium</option>
+            <option value="short">Short</option>
+        </select>
+    </div>
+
+    <div>
+        <label for="descriptionSpeed">Description Speed:</label>
+        <select id="descriptionSpeed">
+            <option value="very_fast">Very Fast</option>
+            <option value="fast">Fast</option>
+            <option value="medium">Medium</option>
+        </select>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
