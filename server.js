@@ -2,70 +2,58 @@ require('dotenv').config();
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
+const { ImageAnnotatorClient } = require('@google-cloud/vision');
 const { OpenAI } = require('openai');
+const base64 = require('base64-js');
 
+const client = new ImageAnnotatorClient();
+const openai = new OpenAI({
+    apiKey: process.env.API_KEY,
+});
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
 
-const openai = new OpenAI({
-  apiKey: process.env.API_KEY
-});
-
-app.post('/analyze', upload.single('image'), async (req, res) => {
+app.post('/analyze', upload.single('frame'), async (req, res) => {
     try {
-        const base64_image = req.file.buffer.toString('base64');
-        const descriptionLength = req.body.descriptionLength;
-        const descriptionSpeed = req.body.descriptionSpeed;
+        // const [visionResult] = await client.labelDetection({ image: { content: req.file.buffer } });
+        // const labels = visionResult.labelAnnotations.map(label => label.description);
+        // const prompt = `Describe the following scene with detailed sentences based on these elements: ${labels.join(', ')}.`;
 
-        let max_tokens;
-        switch(descriptionLength) {
-            case 'long':
-                max_tokens = 200;
-                break;
-            case 'medium':
-                max_tokens = 100;
-                break;
-            case 'short':
-                max_tokens = 50;
-                break;
-        }
+        const base64_image = base64.fromByteArray(req.file.buffer);
 
         const gptResponse = await openai.chat.completions.create({
-            model: "gpt-4",
-            messages: [
+            model: "gpt-4-turbo",
+            "messages": [
                 {
-                    role: "system",
-                    content: `You are an assistant providing detailed descriptions of images for visually impaired individuals. Please provide a ${descriptionSpeed} description with ${descriptionLength} detail.`,
-                },
-                {
-                    role: "user",
-                    content: "Describe the following image:",
-                },
-                {
-                    role: "user",
-                    content: `data:image/jpeg;base64,${base64_image}`
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "What’s in this image?"
+                    },
+                    {
+                      "type": "image_url",
+                      "image_url": {
+                        "url": `data:image/jpeg;base64,${base64_image}`
+                      }
+                    }
+                  ]
                 }
-            ],
-            max_tokens: max_tokens
+              ],
+            max_tokens: 150
         });
-
-        const analysisResult = gptResponse.choices[0].message.content;
-        console.log('GPT Response: ', analysisResult);
-
-        res.json({ description: analysisResult });
+        console.log('GPT Response: ', gptResponse.choices);
+        res.json({ description: gptResponse.choices[0].message.content });
     } catch (error) {
         console.error('Error processing the image: ', error);
         res.status(500).send('Error processing the image');
     }
 });
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
