@@ -5,7 +5,6 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const OpenAI = require('openai');
-const { exec } = require('child_process');
 const { createHash } = require('crypto');
 
 const OpenAI_Api = process.env.API_KEY;
@@ -58,27 +57,6 @@ async function isSignificantlyDifferent(newDesc, oldDesc) {
   return similarity <= 0.9;
 }
 
-// Warteschlange für Audio-Wiedergabe
-let audioQueue = [];
-let isPlaying = false;
-
-function playAudioQueue() {
-  if (audioQueue.length > 0 && !isPlaying) {
-    isPlaying = true;
-    const audioPath = audioQueue.shift();
-
-    exec(`mpg321 ${audioPath}`, (error, stdout, stderr) => {
-      if (error) {
-        console.error(`Error playing audio: ${error.message}`);
-      } else {
-        console.log('Audio played successfully');
-      }
-      isPlaying = false;
-      playAudioQueue();
-    });
-  }
-}
-
 // Funktion zum Speichern der Beschreibung und des Bild-Hashes
 function saveDescriptionData(newDescription, newImageHash) {
   const descriptionData = {
@@ -86,44 +64,6 @@ function saveDescriptionData(newDescription, newImageHash) {
     imageHash: newImageHash,
   };
   fs.writeFileSync(descriptionFile, JSON.stringify(descriptionData));
-}
-
-// Funktion zur Verarbeitung der TTS-Antwort
-async function processTTSResponse(ttsResponse, res, newDescription, newImageHash) {
-  /*
-  if (ttsResponse && ttsResponse.body) {
-    const audioPath = path.join(__dirname, 'public', 'speech.mp3');
-    console.log('Audio Path:', audioPath);
-
-    try {
-      const stream = ttsResponse.body;
-      const buffer = await new Promise((resolve, reject) => {
-        const chunks = [];
-        stream.on('data', chunk => chunks.push(chunk));
-        stream.on('end', () => resolve(Buffer.concat(chunks)));
-        stream.on('error', reject);
-      });
-
-      await fs.promises.writeFile(audioPath, buffer);
-      console.log('Audio saved at:', audioPath);
-
-      // Füge die Audiodatei zur Warteschlange hinzu und starte die Wiedergabe, falls noch nicht laufend
-      audioQueue.push(audioPath);
-      playAudioQueue();
-
-      // Speichern der neuen Beschreibung und des Bild-Hashes
-      saveDescriptionData(newDescription, newImageHash);
-
-      res.json({ description: newDescription, audioPath: audioPath });
-    } catch (err) {
-      console.error('Error writing file:', err);
-      res.status(500).send('Error writing audio file');
-    }
-  } else {
-    console.error('TTS Response body is undefined or invalid');
-    res.status(500).send('TTS Response body is undefined or invalid');
-  }
-  */
 }
 
 // Endpunkt zum Empfangen und Speichern von Bildern
@@ -174,19 +114,6 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
       const refinedDescription = refinedResponse.choices[0].message.content;
       console.log('Refined GPT Response: ', refinedDescription);
 
-      /*
-      // TTS-Anfrage für die verfeinerte Beschreibung
-      const ttsResponse = await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: 'alloy',
-        input: refinedDescription,
-      });
-
-      console.log('TTS Response: ', ttsResponse);
-
-      await processTTSResponse(ttsResponse, res, refinedDescription, newImageHash);
-      */
-
       // Nur die Beschreibung zurückgeben
       saveDescriptionData(refinedDescription, newImageHash);
       res.json({ description: refinedDescription });
@@ -219,24 +146,11 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
     if (isDifferent) {
       console.log('Neuer Inhalt. Vorlesen der neuen Informationen.');
     } else {
-      console.log('Inhalt ist gleich. Keine Audio-Datei wird vorgelesen.');
+      console.log('Inhalt ist gleich.');
       return res.json({ description: 'No significant changes detected' });
     }
 
     if (isDifferent) {
-      /*
-      // TTS-Anfrage
-      const ttsResponse = await openai.audio.speech.create({
-        model: 'tts-1',
-        voice: 'alloy',
-        input: newDescription,
-      });
-
-      console.log('TTS Response: ', ttsResponse);
-
-      await processTTSResponse(ttsResponse, res, newDescription, newImageHash);
-      */
-
       // Nur die Beschreibung zurückgeben
       saveDescriptionData(newDescription, newImageHash);
       res.json({ description: newDescription });
