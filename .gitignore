@@ -1,2 +1,5 @@
 .env
 node_modules
+speech.mp3
+lastDescription.json
+images
