@@ -20,7 +20,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Verzeichnis für gespeicherte Bilder und Beschreibungen
 const imageDir = path.join(__dirname, 'public', 'images');
 const descriptionFile = path.join(__dirname, 'public', 'lastDescription.json');
 
@@ -28,16 +27,13 @@ if (!fs.existsSync(imageDir)) {
   fs.mkdirSync(imageDir, { recursive: true });
 }
 
-// Hilfsfunktion zum Berechnen eines Hash-Werts für das Bild
 function getImageHash(imageBuffer) {
   return createHash('sha256').update(imageBuffer).digest('hex');
 }
 
-// Hilfsfunktion zum Vergleichen der neuen Beschreibung mit der vorherigen
 async function isSignificantlyDifferent(newDesc, oldDesc) {
-  if (!oldDesc) return true; // Falls keine alte Beschreibung vorhanden ist, neue Beschreibung verwenden
+  if (!oldDesc) return true;
 
-  // Verwende die OpenAI-API, um die Ähnlichkeit der Beschreibungen zu berechnen
   const response = await openai.embeddings.create({
     model: 'text-embedding-ada-002',
     input: [newDesc, oldDesc],
@@ -46,18 +42,15 @@ async function isSignificantlyDifferent(newDesc, oldDesc) {
   const newDescEmbedding = response.data[0].embedding;
   const oldDescEmbedding = response.data[1].embedding;
 
-  // Berechne die Kosinusähnlichkeit der Embeddings
   const dotProduct = newDescEmbedding.reduce((sum, value, i) => sum + value * oldDescEmbedding[i], 0);
   const newDescMagnitude = Math.sqrt(newDescEmbedding.reduce((sum, value) => sum + value * value, 0));
   const oldDescMagnitude = Math.sqrt(oldDescEmbedding.reduce((sum, value) => sum + value * value, 0));
 
   const similarity = dotProduct / (newDescMagnitude * oldDescMagnitude);
 
-  // Falls die Ähnlichkeit größer als 0.9 ist, als gleich behandeln
   return similarity <= 0.9;
 }
 
-// Funktion zum Speichern der Beschreibung und des Bild-Hashes
 function saveDescriptionData(newDescription, newImageHash) {
   const descriptionData = {
     description: newDescription,
@@ -66,7 +59,6 @@ function saveDescriptionData(newDescription, newImageHash) {
   fs.writeFileSync(descriptionFile, JSON.stringify(descriptionData));
 }
 
-// Endpunkt zum Empfangen und Speichern von Bildern
 app.post('/upload', upload.single('image'), (req, res) => {
   const imagePath = path.join(imageDir, 'current.jpg');
   fs.writeFileSync(imagePath, req.file.buffer);
@@ -74,13 +66,11 @@ app.post('/upload', upload.single('image'), (req, res) => {
   res.send('Image received and saved');
 });
 
-// Endpunkt zur Bildanalyse
 app.post('/analyze', upload.single('frame'), async (req, res) => {
   try {
     const imageBuffer = req.file.buffer;
     const base64_image = imageBuffer.toString('base64');
 
-    // Berechne den Hash-Wert des aktuellen Bildes
     const newImageHash = getImageHash(imageBuffer);
 
     let lastImageHash = '';
@@ -92,41 +82,14 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
       lastDescription = lastDescriptionData.description;
     }
 
-    // Prüfe, ob das Bild signifikant anders ist als das vorherige Bild
-    if (newImageHash === lastImageHash) {
-      console.log('No significant changes detected');
-      
-      // Verfeinere die vorherige Beschreibung weiter
-      const refinedResponse = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `Erweitere die folgende Beschreibung mit zusätzlichen Details, um eine genauere Vorstellung der Umgebung zu geben: "${lastDescription}".`
-          },
-          {
-            role: 'user',
-            content: `Erkläre dem Blinden mehr Details zu dem, was auf dem Bild zu sehen ist, basierend auf der vorherigen Beschreibung: "${lastDescription}".`
-          }
-        ],
-      });
-
-      const refinedDescription = refinedResponse.choices[0].message.content;
-      console.log('Refined GPT Response: ', refinedDescription);
-
-      // Nur die Beschreibung zurückgeben
-      saveDescriptionData(refinedDescription, newImageHash);
-      res.json({ description: refinedDescription });
-      return;
-    }
-
-    // Erstelle eine vollständige Beschreibung für das erste Bild
     const gptResponse = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         {
           role: 'system',
-          content: `Beschreibe die Objekte und Ereignisse im Bild klar und präzise in maximal 50-60 Wörtern. Vermeide Farben. Nutze Richtungsangaben wie 'links', 'rechts', 'vor dir' und 'hinter dir'. Gib Entfernungen und Größenverhältnisse verständlich an. Beschreibe die Mimik und Gestik von Personen und erwähne mögliche soziale Interaktionen. Beginne mit dem Vordergrund, gehe dann zum Hintergrund über und beschließe mit der Gesamtumgebung.`,
+          content: newImageHash === lastImageHash
+            ? `Das Bild ähnelt dem vorherigen. Gehe ins Detail und beschreibe spezifischere Unterschiede und Details, die im neuen Bild vorhanden sind.`
+            : `Beschreibe die Objekte und Ereignisse im Bild klar und präzise in maximal 50-60 Wörtern. Vermeide Farben. Nutze Richtungsangaben wie 'links', 'rechts', 'vor dir' und 'hinter dir'. Gib Entfernungen und Größenverhältnisse verständlich an. Beschreibe die Mimik und Gestik von Personen und erwähne mögliche soziale Interaktionen. Beginne mit dem Vordergrund, gehe dann zum Hintergrund über und beschließe mit der Gesamtumgebung.`,
         },
         {
           role: 'user',
@@ -138,25 +101,17 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
       ],
     });
 
-    const newDescription = gptResponse.choices[0].message.content;
+    let newDescription = gptResponse.choices[0].message.content;
     console.log('GPT Response: ', newDescription);
 
-    // Vergleich der neuen Beschreibung mit der alten Beschreibung
-    const isDifferent = await isSignificantlyDifferent(newDescription, lastDescription);
-    if (isDifferent) {
-      console.log('Neuer Inhalt. Vorlesen der neuen Informationen.');
-    } else {
-      console.log('Inhalt ist gleich.');
-      return res.json({ description: 'No significant changes detected' });
+    if (newImageHash === lastImageHash) {
+      newDescription = "Das Bild ähnelt dem vorherigen: " + newDescription;
     }
 
-    if (isDifferent) {
-      // Nur die Beschreibung zurückgeben
-      saveDescriptionData(newDescription, newImageHash);
-      res.json({ description: newDescription });
-    } else {
-      res.json({ description: 'No significant changes detected' });
-    }
+    saveDescriptionData(newDescription, newImageHash);
+
+    res.json({ description: newDescription });
+
   } catch (error) {
     console.error('Error processing the image: ', error);
     res.status(500).send('Error processing the image');
