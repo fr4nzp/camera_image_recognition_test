@@ -90,6 +90,7 @@ function saveDescriptionData(newDescription, newImageHash) {
 
 // Funktion zur Verarbeitung der TTS-Antwort
 async function processTTSResponse(ttsResponse, res, newDescription, newImageHash) {
+  /*
   if (ttsResponse && ttsResponse.body) {
     const audioPath = path.join(__dirname, 'public', 'speech.mp3');
     console.log('Audio Path:', audioPath);
@@ -122,6 +123,7 @@ async function processTTSResponse(ttsResponse, res, newDescription, newImageHash
     console.error('TTS Response body is undefined or invalid');
     res.status(500).send('TTS Response body is undefined or invalid');
   }
+  */
 }
 
 // Endpunkt zum Empfangen und Speichern von Bildern
@@ -153,7 +155,42 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
     // Prüfe, ob das Bild signifikant anders ist als das vorherige Bild
     if (newImageHash === lastImageHash) {
       console.log('No significant changes detected');
-      return res.json({ description: 'No significant changes detected' });
+      
+      // Verfeinere die vorherige Beschreibung weiter
+      const refinedResponse = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: `Erweitere die folgende Beschreibung mit zusätzlichen Details, um eine genauere Vorstellung der Umgebung zu geben: "${lastDescription}".`
+          },
+          {
+            role: 'user',
+            content: `Erkläre dem Blinden mehr Details zu dem, was auf dem Bild zu sehen ist, basierend auf der vorherigen Beschreibung: "${lastDescription}".`
+          }
+        ],
+      });
+
+      const refinedDescription = refinedResponse.choices[0].message.content;
+      console.log('Refined GPT Response: ', refinedDescription);
+
+      /*
+      // TTS-Anfrage für die verfeinerte Beschreibung
+      const ttsResponse = await openai.audio.speech.create({
+        model: 'tts-1',
+        voice: 'alloy',
+        input: refinedDescription,
+      });
+
+      console.log('TTS Response: ', ttsResponse);
+
+      await processTTSResponse(ttsResponse, res, refinedDescription, newImageHash);
+      */
+
+      // Nur die Beschreibung zurückgeben
+      saveDescriptionData(refinedDescription, newImageHash);
+      res.json({ description: refinedDescription });
+      return;
     }
 
     // Erstelle eine vollständige Beschreibung für das erste Bild
@@ -162,7 +199,7 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
       messages: [
         {
           role: 'system',
-          content: `Beschreibe die Objekte und Ereignisse im Bild klar und präzise in maximal 50-60 Wörtern. Vermeide Farben. Nutze Richtungsangaben wie 'links', 'rechts', 'vor dir' und 'hinter dir'. Gib Entfernungen und Größenverhältnisse verständlich an. Beschreibe die Mimik und Gestik von Personen und erwähne mögliche soziale Interaktionen. Beginne mit dem Vordergrund, gehe dann zum Hintergrund über und beschließe mit der Gesamtumgebung.´`,
+          content: `Beschreibe die Objekte und Ereignisse im Bild klar und präzise in maximal 50-60 Wörtern. Vermeide Farben. Nutze Richtungsangaben wie 'links', 'rechts', 'vor dir' und 'hinter dir'. Gib Entfernungen und Größenverhältnisse verständlich an. Beschreibe die Mimik und Gestik von Personen und erwähne mögliche soziale Interaktionen. Beginne mit dem Vordergrund, gehe dann zum Hintergrund über und beschließe mit der Gesamtumgebung.`,
         },
         {
           role: 'user',
@@ -187,6 +224,7 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
     }
 
     if (isDifferent) {
+      /*
       // TTS-Anfrage
       const ttsResponse = await openai.audio.speech.create({
         model: 'tts-1',
@@ -197,6 +235,11 @@ app.post('/analyze', upload.single('frame'), async (req, res) => {
       console.log('TTS Response: ', ttsResponse);
 
       await processTTSResponse(ttsResponse, res, newDescription, newImageHash);
+      */
+
+      // Nur die Beschreibung zurückgeben
+      saveDescriptionData(newDescription, newImageHash);
+      res.json({ description: newDescription });
     } else {
       res.json({ description: 'No significant changes detected' });
     }
